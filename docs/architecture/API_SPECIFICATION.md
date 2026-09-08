@@ -11,8 +11,10 @@ The SentinelAI API follows RESTful conventions and uses JSON. All endpoints requ
 - **`GET /api/v1/roles`** [Admin]: Lists available roles.
 
 ## Services
-- **`GET /api/v1/services`** [Viewer+]: Lists services.
-- **`POST /api/v1/services`** [Admin, Manager]: Registers a service.
+- **`GET /api/v1/services`** [All human roles]: Lists services (filterable by environment, status).
+- **`POST /api/v1/services`** [Admin]: Registers a new service.
+- **`GET /api/v1/services/{id}`** [All human roles]: Gets service details.
+- **`PATCH /api/v1/services/{id}`** [Admin]: Updates service configuration (name, description, owner, environment) and lifecycle state (e.g., active vs archived via `is_active`).
 
 ## Telemetry
 - **`POST /api/v1/telemetry/ingest`** [Machine Credential]: Accepts OTLP-like JSON payload for logs, metrics, or traces. Requires a dedicated service account credential with `telemetry:ingest` permission, not a human user token.

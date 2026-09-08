@@ -10,8 +10,10 @@ SentinelAI uses PostgreSQL as its primary relational store.
 - **`user_roles`**: `user_id` (UUID, FK), `role_id` (UUID, FK). Composite PK.
 
 ### Service Registry
-- **`services`**: `id` (UUID, PK), `name` (String, Unique), `repository_url` (String), `owner_team` (String, Optional), `created_at` (Timestamp).
-  *(Note: For the MVP, service ownership is represented as a simple optional owner/team string rather than a rigid Foreign Key to a specific human user account. This prevents lifecycle complexity—such as what happens to a service when its single human owner leaves the company or is deactivated—and aligns better with real-world DevOps practices where teams, not individuals, own services.)*
+- **`services`**: `id` (UUID, PK), `name` (VARCHAR(100), NOT NULL), `description` (VARCHAR(255), Optional), `environment` (VARCHAR(50), NOT NULL), `owner_team` (VARCHAR(100), Optional), `is_active` (Boolean, NOT NULL, Default True), `created_at` (TIMESTAMPTZ, NOT NULL), `updated_at` (TIMESTAMPTZ, NOT NULL).
+  - *Constraints*: `UNIQUE(name, environment)`.
+  - *Indexes*: Appropriate indexes for fast lookup (e.g., on name, environment, is_active).
+  *(Note: For the MVP, service ownership is represented as a simple optional owner/team string rather than a rigid Foreign Key to a specific human user account. No separate Team or Environment tables are used. Soft deletion via `is_active` preserves telemetry and incident referential integrity.)*
 
 ### Incidents and Telemetry
 - **`telemetry`**: `id` (UUID, PK), `service_id` (UUID, FK), `timestamp` (Timestamp), `ingestion_timestamp` (Timestamp), `telemetry_type` (String/Enum: log, metric, trace), `trace_id` (String, Optional 128-bit OTel ID), `span_id` (String, Optional 64-bit OTel ID), `parent_span_id` (String, Optional 64-bit OTel ID), `severity` (String, Optional), `resource_attributes` (JSONB), `event_attributes` (JSONB), `raw_payload` (JSONB).

@@ -15,6 +15,7 @@ The platform relies on structured observability data following the **OpenTelemet
   - `span_id`: OTel 64-bit SpanId
   - `parent_span_id`: OTel 64-bit SpanId
 - **Idempotency Strategy**: To handle duplicate ingestion safely across logs, metrics, and traces, a deterministic event fingerprint/hash (e.g., SHA-256 of `service_id` + `timestamp` + `payload` + OTel identifiers if present) will be computed and enforced via a unique constraint in the database.
+- **Service Lifecycle Compatibility**: Live telemetry ingestion requires the referenced service to be active (`is_active = True`). Payload submissions referencing archived services will be rejected. Archived services may still be referenced by existing historical telemetry, incidents, investigations, and audit records without constraint violations. (Note: Historical/backfill ingestion of old telemetry into archived services is NOT being implemented in this phase).
 
 ## Telemetry Data Model
 The internal conceptual schema distinguishes normalized, easily queryable metadata from the original raw telemetry payload:

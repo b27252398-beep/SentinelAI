@@ -16,7 +16,7 @@
 | Resource | Action | Admin | Manager | Engineer | Viewer |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | Users/Roles | Create/Update | Yes | No | No | No |
-| Services | Create/Update | Yes | Yes | No | No |
+| Services | Create/Update/Archive | Yes | No | No | No |
 | Incidents | Create | Yes | Yes | No | No |
 | Incidents | Update Status | Yes | Yes | Yes | No |
 | Investigations| Trigger | Yes | Yes | Yes | No |
