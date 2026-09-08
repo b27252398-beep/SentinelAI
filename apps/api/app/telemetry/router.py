@@ -111,6 +111,8 @@ def ingest_telemetry(
             "metric_name": event.metric_name,
             "metric_value": event.metric_value,
             "unit": event.unit,
+            "http_status_code": event.http_status_code,
+            "span_kind": event.span_kind,
             "fingerprint": fingerprint,
             "resource_attributes": res_attr,
             "event_attributes": evt_attr,

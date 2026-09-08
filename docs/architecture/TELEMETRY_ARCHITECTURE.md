@@ -34,6 +34,8 @@ The conceptual schema distinguishes normalized, easily queryable relational colu
 - `metric_name`: VARCHAR(255) (Optional for Metrics)
 - `metric_value`: DOUBLE PRECISION (Optional for Metrics)
 - `unit`: VARCHAR(50) (Optional for Metrics)
+- `http_status_code`: INTEGER (Optional for web spans). Extracted canonically from `event_attributes.http.response.status_code`, `event_attributes.http.status_code`, or identical fields within `raw_payload.attributes`. Invalid extractions yield NULL.
+- `span_kind`: VARCHAR(20) (Optional for traces). Extracted canonically from `raw_payload.kind` or `raw_payload.spanKind`. Converts standard integers (1-5) and specific strings (CLIENT, SERVER, PRODUCER, CONSUMER, INTERNAL). Invalid extractions yield NULL.
 - `fingerprint`: VARCHAR(64) (Idempotency Hash)
 
 ### JSONB / Raw Storage

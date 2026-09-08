@@ -198,3 +198,80 @@ def test_oversized_request_rejection(client, db_session):
     )
     assert resp.status_code == 413
 
+def test_http_status_extraction(client, db_session):
+    svc = setup_service(db_session)
+    cred = setup_credential(db_session, svc.id)
+    viewer_token = setup_user_with_role(db_session, "Viewer")
+    
+    events = [
+        # 1. Valid status in event_attributes
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "event_attributes": {"http.response.status_code": 200}, "raw_payload": {}},
+        
+        # 2. Valid status in raw_payload attributes (alternative standard)
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "raw_payload": {"attributes": {"http.status_code": "404"}}},
+         
+        # 3. Invalid status (malformed string)
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "event_attributes": {"http.status_code": "not-an-int"}, "raw_payload": {}},
+         
+        # 4. No status
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "raw_payload": {}}
+    ]
+    
+    resp = client.post("/api/v1/telemetry/ingest", headers={"Authorization": f"Bearer {cred}"}, json={"events": events})
+    assert resp.status_code == 200
+    assert resp.json()["accepted"] == 4
+    
+    # Verify in DB
+    resp_get = client.get(f"/api/v1/telemetry?service_id={str(svc.id)}", headers={"Authorization": f"Bearer {viewer_token}"})
+    data = sorted(resp_get.json(), key=lambda x: x["timestamp"]) # Sort to match insertion order roughly, or just check contents
+    
+    # We will just verify the expected status codes exist in the DB
+    status_codes = [d.get("http_status_code") for d in data]
+    assert 200 in status_codes
+    assert 404 in status_codes
+    assert status_codes.count(None) == 2
+
+def test_span_kind_extraction(client, db_session):
+    svc = setup_service(db_session)
+    cred = setup_credential(db_session, svc.id)
+    viewer_token = setup_user_with_role(db_session, "Viewer")
+    
+    events = [
+        # 1. Integer span kind
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "raw_payload": {"kind": 3}}, # CLIENT
+         
+        # 2. String SPAN_KIND_SERVER
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "raw_payload": {"spanKind": "SPAN_KIND_SERVER"}},
+         
+        # 3. String PRODUCER
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "span_kind": "PRODUCER", "raw_payload": {}}, # Passed directly
+         
+        # 4. Invalid span kind
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "raw_payload": {"kind": "UNKNOWN"}},
+         
+        # 5. Out of bounds integer
+        {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
+         "raw_payload": {"kind": 99}}
+    ]
+    
+    resp = client.post("/api/v1/telemetry/ingest", headers={"Authorization": f"Bearer {cred}"}, json={"events": events})
+    assert resp.status_code == 200
+    assert resp.json()["accepted"] == 5
+    
+    resp_get = client.get(f"/api/v1/telemetry?service_id={str(svc.id)}", headers={"Authorization": f"Bearer {viewer_token}"})
+    data = resp_get.json()
+    
+    kinds = [d.get("span_kind") for d in data]
+    assert "CLIENT" in kinds
+    assert "SERVER" in kinds
+    assert "PRODUCER" in kinds
+    assert kinds.count(None) >= 2
+

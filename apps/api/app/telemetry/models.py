@@ -31,6 +31,8 @@ class Telemetry(Base):
     metric_name = Column(String(255), nullable=True)
     metric_value = Column(Float, nullable=True)
     unit = Column(String(50), nullable=True)
+    http_status_code = Column(Integer, nullable=True)
+    span_kind = Column(String(20), nullable=True)
     fingerprint = Column(String(64), nullable=False)
     
     resource_attributes = Column(JSONB().with_variant(String, "sqlite"), nullable=True)

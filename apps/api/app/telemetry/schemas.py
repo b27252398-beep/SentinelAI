@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 from datetime import datetime, timedelta, timezone
@@ -14,6 +14,8 @@ class TelemetryEvent(BaseModel):
     metric_name: Optional[str] = Field(None, max_length=255)
     metric_value: Optional[float] = None
     unit: Optional[str] = Field(None, max_length=50)
+    http_status_code: Optional[int] = None
+    span_kind: Optional[str] = Field(None, max_length=20)
     resource_attributes: Optional[Dict[str, Any]] = None
     event_attributes: Optional[Dict[str, Any]] = None
     raw_payload: Dict[str, Any]
@@ -60,6 +62,66 @@ class TelemetryEvent(BaseModel):
             except:
                 pass
         return v
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_semantics(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # http_status_code
+            if data.get('http_status_code') is None:
+                evt = data.get('event_attributes') or {}
+                if isinstance(evt, str):
+                    import json
+                    try:
+                        evt = json.loads(evt)
+                    except:
+                        evt = {}
+                raw = data.get('raw_payload') or {}
+                if isinstance(raw, str):
+                    import json
+                    try:
+                        raw = json.loads(raw)
+                    except:
+                        raw = {}
+                
+                status = evt.get('http.response.status_code') or evt.get('http.status_code')
+                if status is None:
+                    attrs = raw.get('attributes') or {}
+                    status = attrs.get('http.response.status_code') or attrs.get('http.status_code')
+                
+                if status is not None:
+                    try:
+                        data['http_status_code'] = int(status)
+                    except (ValueError, TypeError):
+                        pass
+
+            # span_kind
+            kind_val = data.get('span_kind')
+            if kind_val is not None:
+                val = str(kind_val).upper().replace('SPAN_KIND_', '')
+                if val in ['CLIENT', 'SERVER', 'PRODUCER', 'CONSUMER', 'INTERNAL']:
+                    data['span_kind'] = val
+                else:
+                    data['span_kind'] = None
+            else:
+                raw = data.get('raw_payload') or {}
+                if isinstance(raw, str):
+                    import json
+                    try:
+                        raw = json.loads(raw)
+                    except:
+                        raw = {}
+                kind = raw.get('kind') or raw.get('spanKind')
+                if kind is not None:
+                    if isinstance(kind, int) or str(kind).isdigit():
+                        kind_map = {1: 'INTERNAL', 2: 'SERVER', 3: 'CLIENT', 4: 'PRODUCER', 5: 'CONSUMER'}
+                        data['span_kind'] = kind_map.get(int(kind))
+                    else:
+                        val = str(kind).upper().replace('SPAN_KIND_', '')
+                        if val in ['CLIENT', 'SERVER', 'PRODUCER', 'CONSUMER', 'INTERNAL']:
+                            data['span_kind'] = val
+                            
+        return data
 
 class TelemetryBatch(BaseModel):
     events: List[TelemetryEvent] = Field(..., max_length=1000)
