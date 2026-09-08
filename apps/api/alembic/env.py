@@ -15,8 +15,11 @@ from app.db.base import Base
 from app.auth.models import *
 from app.services.models import *
 from app.telemetry.models import *
+from app.detection.models import *
 import app.auth.models  # Required for Alembic to discover models in Base.metadata
 import app.services.models
+import app.telemetry.models
+import app.detection.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
