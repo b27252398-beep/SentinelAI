@@ -126,15 +126,16 @@ The Detection Worker strictly follows least privilege.
    - Detector: Z-Score
    - Anomaly Condition: `z = (current_latency - baseline_mean) / max(baseline_stddev, 0.0001)` evaluates to `z >= 5.0`
    - Anomaly Severity: P2
-4. **Deployment Regression**:
-   - Telemetry Signal: HTTP status codes from web spans. **(Technically supported by Telemetry Foundation through the canonical `http_status_code` column).**
-   - Mathematical Formula: `current_error_rate = count(spans WHERE http_status_code >= 500) / count(all web spans)`
-   - Feature: `error_rate`
-   - Detector: Static Threshold
-   - Anomaly Condition: `current_error_rate >= 0.01`
-   - Anomaly Severity: P3 (Warning) or P2 (Critical)
-5. **Dependency Failure**:
-   - Telemetry Signal: Explicit outbound traces (`span_kind = CLIENT`). **(Outbound span classification is supported by Telemetry Foundation through the canonical `span_kind` column, but outbound error-status semantics remain a telemetry capability gap)**.
+4. **Deployment Regression (DEFERRED)**:
+    - Telemetry Signal: HTTP status codes from web spans. **(DEFERRED: Canonical HTTP-request population cannot be reliably identified from existing telemetry to serve as a denominator. A future minimal telemetry enhancement such as an explicit `is_http_request` canonical field or established HTTP semantic classification is required).**
+    - Mathematical Formula: `current_error_rate = count(spans WHERE http_status_code >= 500) / count(all web spans)`
+    - Feature: `error_rate`
+    - Detector: Static Threshold
+    - Anomaly Condition: `current_error_rate >= 0.01`
+    - Anomaly Severity: P3 (Warning) or P2 (Critical)
+
+5. **Dependency Failure (DEFERRED)**:
+    - Telemetry Signal: Explicit outbound traces (`span_kind = CLIENT`). **(DEFERRED: Outbound span classification is supported by Telemetry Foundation through the canonical `span_kind` column, but canonical outbound error status is unavailable. Do not infer error from severity or arbitrary fields).**
    - Mathematical Formula: `current_error_rate = count(outbound spans with error) / count(all outbound spans)`
    - Feature: `dependency_error_rate`
    - Detector: Z-Score

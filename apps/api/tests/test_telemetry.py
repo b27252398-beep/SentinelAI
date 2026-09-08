@@ -249,9 +249,9 @@ def test_span_kind_extraction(client, db_session):
         {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
          "raw_payload": {"spanKind": "SPAN_KIND_SERVER"}},
          
-        # 3. String PRODUCER
+        # 3. String PRODUCER (Passed independently - should be ignored and yield None)
         {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
-         "span_kind": "PRODUCER", "raw_payload": {}}, # Passed directly
+         "span_kind": "PRODUCER", "raw_payload": {}},
          
         # 4. Invalid span kind
         {"service_id": str(svc.id), "timestamp": now_utc().isoformat(), "telemetry_type": "trace",
@@ -272,6 +272,6 @@ def test_span_kind_extraction(client, db_session):
     kinds = [d.get("span_kind") for d in data]
     assert "CLIENT" in kinds
     assert "SERVER" in kinds
-    assert "PRODUCER" in kinds
-    assert kinds.count(None) >= 2
+    assert "PRODUCER" not in kinds
+    assert kinds.count(None) == 3
 

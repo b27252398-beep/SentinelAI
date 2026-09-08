@@ -14,8 +14,8 @@ class TelemetryEvent(BaseModel):
     metric_name: Optional[str] = Field(None, max_length=255)
     metric_value: Optional[float] = None
     unit: Optional[str] = Field(None, max_length=50)
-    http_status_code: Optional[int] = None
-    span_kind: Optional[str] = Field(None, max_length=20)
+    http_status_code: Optional[int] = Field(None, exclude=True)
+    span_kind: Optional[str] = Field(None, exclude=True)
     resource_attributes: Optional[Dict[str, Any]] = None
     event_attributes: Optional[Dict[str, Any]] = None
     raw_payload: Dict[str, Any]
@@ -95,31 +95,27 @@ class TelemetryEvent(BaseModel):
                     except (ValueError, TypeError):
                         pass
 
-            # span_kind
-            kind_val = data.get('span_kind')
-            if kind_val is not None:
-                val = str(kind_val).upper().replace('SPAN_KIND_', '')
-                if val in ['CLIENT', 'SERVER', 'PRODUCER', 'CONSUMER', 'INTERNAL']:
-                    data['span_kind'] = val
+            # Always derive span_kind strictly from payload
+            raw = data.get('raw_payload') or {}
+            if isinstance(raw, str):
+                import json
+                try:
+                    raw = json.loads(raw)
+                except:
+                    raw = {}
+            kind = raw.get('kind') or raw.get('spanKind')
+            if kind is not None:
+                if isinstance(kind, int) or str(kind).isdigit():
+                    kind_map = {1: 'INTERNAL', 2: 'SERVER', 3: 'CLIENT', 4: 'PRODUCER', 5: 'CONSUMER'}
+                    data['span_kind'] = kind_map.get(int(kind))
                 else:
-                    data['span_kind'] = None
-            else:
-                raw = data.get('raw_payload') or {}
-                if isinstance(raw, str):
-                    import json
-                    try:
-                        raw = json.loads(raw)
-                    except:
-                        raw = {}
-                kind = raw.get('kind') or raw.get('spanKind')
-                if kind is not None:
-                    if isinstance(kind, int) or str(kind).isdigit():
-                        kind_map = {1: 'INTERNAL', 2: 'SERVER', 3: 'CLIENT', 4: 'PRODUCER', 5: 'CONSUMER'}
-                        data['span_kind'] = kind_map.get(int(kind))
+                    val = str(kind).upper().replace('SPAN_KIND_', '')
+                    if val in ['CLIENT', 'SERVER', 'PRODUCER', 'CONSUMER', 'INTERNAL']:
+                        data['span_kind'] = val
                     else:
-                        val = str(kind).upper().replace('SPAN_KIND_', '')
-                        if val in ['CLIENT', 'SERVER', 'PRODUCER', 'CONSUMER', 'INTERNAL']:
-                            data['span_kind'] = val
+                        data['span_kind'] = None
+            else:
+                data['span_kind'] = None
                             
         return data
 
@@ -134,6 +130,8 @@ class TelemetryResponse(TelemetryEvent):
     id: UUID
     ingestion_timestamp: datetime
     fingerprint: str
+    http_status_code: Optional[int] = None
+    span_kind: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
     
 class MachineCredentialCreate(BaseModel):
