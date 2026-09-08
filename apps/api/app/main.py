@@ -6,6 +6,8 @@ from app.core.logging import setup_logging
 from app.core.exceptions import setup_exception_handlers
 from app.api import health
 from app.auth import router as auth_router
+from app.services import router as services_router
+from app.telemetry import router as telemetry_router
 
 # Configure structured logging
 setup_logging()
@@ -33,6 +35,5 @@ setup_exception_handlers(app)
 # Include routers
 app.include_router(health.router, tags=["Health"])
 app.include_router(auth_router.router)
-
-from app.services import router as services_router
 app.include_router(services_router.router, prefix="/api/v1")
+app.include_router(telemetry_router.router, prefix="/api/v1/telemetry", tags=["Telemetry"])

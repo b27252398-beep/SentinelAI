@@ -8,41 +8,98 @@ The platform relies on structured observability data following the **OpenTelemet
 3. **Traces**: Distributed request flows showing span durations across services.
 
 ## Ingestion & Normalization
-- Telemetry is ingested via a REST API endpoint (`/api/v1/telemetry/ingest`).
-- In Phase 1, data is directly persisted to PostgreSQL (using Partitioned tables or JSONB columns) rather than deploying a heavy time-series DB like Prometheus or Elasticsearch. This maintains the MVP monolithic scope while being sufficient for a simulated environment.
-- **Correlation Identifiers**: Every log, metric, or trace must include a `service_id` and a `timestamp`. To strictly align with OpenTelemetry standards, tracing identifiers must be preserved as their native OTel formats in the database (e.g., standard Hex Strings):
-  - `trace_id`: OTel 128-bit TraceId
-  - `span_id`: OTel 64-bit SpanId
-  - `parent_span_id`: OTel 64-bit SpanId
-- **Idempotency Strategy**: To handle duplicate ingestion safely across logs, metrics, and traces, a deterministic event fingerprint/hash (e.g., SHA-256 of `service_id` + `timestamp` + `payload` + OTel identifiers if present) will be computed and enforced via a unique constraint in the database.
-- **Service Lifecycle Compatibility**: Live telemetry ingestion requires the referenced service to be active (`is_active = True`). Payload submissions referencing archived services will be rejected. Archived services may still be referenced by existing historical telemetry, incidents, investigations, and audit records without constraint violations. (Note: Historical/backfill ingestion of old telemetry into archived services is NOT being implemented in this phase).
+- Telemetry is ingested via a single REST API endpoint (`POST /api/v1/telemetry/ingest`). A single endpoint accepting a `telemetry_type` envelope simplifies the collector pipeline and routing.
+- In Phase 1, data is persisted to a unified `telemetry` PostgreSQL table utilizing time-based declarative partitioning. A single table with JSONB payloads minimizes schema migrations when OTel specifications evolve while still allowing index-driven querying on core normalized metadata.
+
+## OpenTelemetry Compatibility
+- **Correlation Identifiers**: Every event must include a `service_id` and a `timestamp`. Tracing identifiers must be preserved strictly in their native OTel formats (Hex strings):
+  - `trace_id`: 128-bit String (NOT a UUID)
+  - `span_id`: 64-bit String (NOT a UUID)
+  - `parent_span_id`: 64-bit String (NOT a UUID)
+- SentinelAI's internal identifier remains a strictly generated `id` (UUID), but it acts as part of a composite primary key alongside `timestamp` due to PostgreSQL partitioning requirements.
 
 ## Telemetry Data Model
-The internal conceptual schema distinguishes normalized, easily queryable metadata from the original raw telemetry payload:
-- **Normalized / Queryable Metadata**:
-  - `id`: SentinelAI telemetry ID (UUID, Primary Key)
-  - `service_id`: UUID (Foreign Key to Services)
-  - `timestamp`: UTC Timestamp (Event occurrence)
-  - `ingestion_timestamp`: UTC Timestamp (Time received by SentinelAI)
-  - `telemetry_type`: Enum (log, metric, trace)
-  - `trace_id`: 128-bit String (Optional)
-  - `span_id`: 64-bit String (Optional)
-  - `parent_span_id`: 64-bit String (Optional)
-  - `severity`: String or Integer (Optional)
-- **Raw / Original Payload**:
-  - `resource_attributes`: JSONB (Attributes describing the source, e.g., host/container)
-  - `event_attributes`: JSONB (Semantic attributes of the specific event)
-  - `raw_payload`: JSONB (The complete unadulterated original payload)
+The conceptual schema distinguishes normalized, easily queryable relational columns from the raw payload:
 
-## Making Telemetry Usable
-- **Anomaly Detection**: Background workers periodically query metric averages over rolling windows (e.g., 5-minute buckets) and compare against historical baselines.
-- **Investigation Retrieval**: When an incident occurs at time $T$, the AI Investigation module queries telemetry for the affected `service_id` within the window $[T-15m, T+5m]$ to extract **Observed Facts**.
+### Relational / Queryable Metadata
+- `id`: UUID (Part of Composite PK)
+- `timestamp`: TIMESTAMPTZ (Event occurrence - Partition Key & Part of Composite PK)
+- `service_id`: UUID (Logical Reference to Services)
+- `ingestion_timestamp`: TIMESTAMPTZ (Time received by SentinelAI)
+- `telemetry_type`: VARCHAR(20) (log, metric, trace)
+- `trace_id`: VARCHAR(32) (Optional 128-bit Hex)
+- `span_id`: VARCHAR(16) (Optional 64-bit Hex)
+- `parent_span_id`: VARCHAR(16) (Optional 64-bit Hex)
+- `severity_number`: INTEGER (Optional for Logs)
+- `metric_name`: VARCHAR(255) (Optional for Metrics)
+- `metric_value`: DOUBLE PRECISION (Optional for Metrics)
+- `unit`: VARCHAR(50) (Optional for Metrics)
+- `fingerprint`: VARCHAR(64) (Idempotency Hash)
 
-## Data Retention & Cleanup
-- **Retention Policy**: Raw telemetry (logs, metrics, traces) stored in PostgreSQL has a default retention period of **7 days**.
-- **Configurability**: The retention period is configurable via application environment variables (e.g., `TELEMETRY_RETENTION_DAYS=7`).
-- **Physical Design (Time Partitioning)**: The telemetry tables will rely on PostgreSQL time-based partitioning. Retention cleanup will occur optimally by dropping old table partitions (e.g., daily partitions). For small MVP setups where partitioning is overkill, a fallback background job (e.g., Celery) using a bulk `DELETE` query will execute the cleanup.
-- **Evidence Persistence**: Investigation evidence is promoted and persisted independently from raw telemetry. When an investigation references a telemetry record, a copy of that record is stored in `investigation_evidence`. Therefore, raw telemetry cleanup will never delete the evidence backing an incident investigation, nor will it delete incident records, hypotheses, root causes, recommendations, or audit logs.
+### JSONB / Raw Storage
+- `resource_attributes`: JSONB (Attributes describing the source, e.g., host/container)
+- `event_attributes`: JSONB (Semantic attributes of the specific event)
+- `raw_payload`: JSONB (The complete unadulterated original payload)
 
-## Simulated Environment Strategy
-We will build a simple script to generate mock telemetry for services like `api-gateway` and `user-service`. The script will simulate steady-state metrics and subsequently inject anomalies (e.g., spiking error rates, database exhaustion) to accurately test the detection and AI pipelines.
+## Database Partitioning & Primary Keys
+- **Partition Strategy**: Declarative `RANGE` partitioning keyed on the `timestamp` column. The interval is **Daily** (e.g., `telemetry_p2026_09_08`).
+- **Primary Key**: PostgreSQL partitioned tables require the partition key to be part of the Primary Key. Therefore, the physical PK is **`PRIMARY KEY(id, timestamp)`**. Do not attempt a parent-level `UNIQUE(id)` constraint, as it conflicts with PostgreSQL partitioning.
+- **Global Uniqueness**: The `id` (UUIDv4) is statistically globally unique on its own and serves as the canonical SentinelAI telemetry UUID. The API `GET /api/v1/telemetry/{id}` lookup is supported via an explicit index on `id`.
+- **Future References**: Because partitions are aggressively dropped after 7 days, long-lived tables (like `incidents` or `investigation_evidence`) **MUST NOT** use strict database Foreign Keys pointing to `telemetry`. Instead, they will store logical references (the telemetry UUID/timestamp) and perform deep copies of the raw payload into an `evidence` table. 
+
+## Partition Management & Ingestion Window
+- **Ingestion Policy Window**: The supported ingestion window is an explicit application policy. For the MVP, this window is approximately **T-7 days through T+2 days**.
+- **Boundary Rejections**: Telemetry with timestamps older than T-7 or exceedingly far into the future (> T+2) is explicitly rejected by the application validation layer.
+- **Maintenance**: A background cron worker manages partitions, guaranteeing daily partitions are pre-created solely for this supported window. The system explicitly blocks arbitrary partition creation based on attacker-controlled timestamps.
+
+## Idempotency Strategy
+To handle duplicate submissions gracefully during batch processing:
+- **Composition**: `SHA256(service_id + timestamp.isoformat() + telemetry_type + (trace_id|span_id if present) + SHA256(canonical JSON payload))`
+- **Enforcement**: A `UNIQUE(fingerprint, timestamp)` constraint is placed on the partitioned table.
+- **Batch Semantics**: Ingestion uses standard `INSERT ... ON CONFLICT (fingerprint, timestamp) DO NOTHING`. This deterministic batch semantic means new events are appended, exact duplicates are silently ignored, and the API safely returns `200 OK` (e.g. `{"accepted": N, "duplicates": M}`) for the batch without crashing or demanding complex client retries.
+
+## Service Lifecycle Compatibility
+- **Active Check**: Live telemetry ingestion strictly requires `services.is_active = True`. Payloads referencing archived services are rejected.
+
+## Machine Authentication Design
+Machine ingestion strictly utilizes least-privilege service-scoped credentials (`machine_credentials` table):
+- `id`: UUID (PK)
+- `service_id`: UUID (Nullable). **Service-scoped credentials are the DEFAULT MVP mechanism.** A credential maps to exactly one service and grants `telemetry:ingest`. A global credential (`service_id=NULL`) may exist *only* as an explicitly privileged administrative capability for centralized OpenTelemetry Collector deployments, but it must NEVER be presented as the default.
+- `key_prefix`: VARCHAR(16) (Public identifier for ultra-fast lookup).
+- `api_key_hash`: VARCHAR(64) (Stores `SHA-256` of the secret).
+- `name`: VARCHAR(100)
+- `is_active`: BOOLEAN
+- `created_at`: TIMESTAMPTZ
+- `revoked_at`: TIMESTAMPTZ (Nullable)
+
+**Credential Authentication Flow**:
+1. Incoming API token arrives formatted as `prefix.secret`.
+2. Application queries DB using the indexed `key_prefix` to efficiently identify the credential record.
+3. Application hashes the provided secret via `SHA-256` and compares against `api_key_hash`.
+4. Validates `is_active = True`.
+5. Validates ingestion scope and bounds against the targeted `service_id`.
+
+## Data Retention & Investigation Evidence
+- **Raw Telemetry**: Highly ephemeral. Default retention is **7 days**. Old partitions are dropped physically (`DROP TABLE telemetry_pYYYY_MM_DD`).
+- **Investigation Evidence**: Highly durable. Promoted evidence is persisted completely independently. When an anomaly is investigated, crucial telemetry is deep-copied into the `investigation_evidence` schema.
+- **Provenance**: `investigation_evidence` stores the raw telemetry UUID as logical provenance metadata only. It survives completely intact when the originating raw telemetry partitions expire and are purged.
+
+## Query API & RBAC
+- **`POST /api/v1/telemetry/ingest`**: [Machine Credential Only]. Accepts batches (Max size: 5MB). Yields synchronous `200 OK` (reporting duplicates vs accepted counts).
+- **`GET /api/v1/telemetry`**: [All 4 Human Roles]. Supports query parameters (`service_id`, `time_range`, `telemetry_type`, `trace_id`).
+- **`GET /api/v1/telemetry/{id}`**: [All 4 Human Roles]. Uses `ix_telemetry_id` to quickly locate the specific row.
+
+## Indexes (MVP Critical)
+- `(timestamp)`: Implicitly optimized by partitioning, but local index helps time-range queries.
+- `(service_id, timestamp)`: Essential for service-centric time range queries (Anomaly detection).
+- `(trace_id)`: Essential for distributed trace correlation.
+- `(id)`: Essential for `GET /telemetry/{id}` canonical lookups across partitions.
+- `(fingerprint, timestamp)`: Required for the UNIQUE constraint supporting idempotency.
+- `(key_prefix)`: Crucial for blazing-fast Machine Credential lookups.
+
+## Ingestion Validation & Error Model
+- **200 OK**: Batch successfully processed synchronously. Response denotes `accepted` and `duplicates`.
+- **401 Unauthorized**: Invalid or missing Machine API Key.
+- **403 Forbidden**: Target service is archived, API Key is revoked, or a service-scoped key attempts to ingest for a mismatched `service_id`.
+- **413 Payload Too Large**: Request exceeds the maximum configured batch size (e.g., 5MB).
+- **422 Unprocessable Entity**: Malformed JSON, out-of-bounds timestamp (violating T-7 to T+2 policy), or improperly formatted Hex strings.

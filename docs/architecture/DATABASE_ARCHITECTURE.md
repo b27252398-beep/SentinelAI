@@ -15,8 +15,13 @@ SentinelAI uses PostgreSQL as its primary relational store.
   - *Indexes*: Appropriate indexes for fast lookup (e.g., on name, environment, is_active).
   *(Note: For the MVP, service ownership is represented as a simple optional owner/team string rather than a rigid Foreign Key to a specific human user account. No separate Team or Environment tables are used. Soft deletion via `is_active` preserves telemetry and incident referential integrity.)*
 
+### Telemetry Ingestion Credentials
+- **`machine_credentials`**: `id` (UUID, PK), `service_id` (UUID, Nullable FK), `key_prefix` (VARCHAR(16), Unique, NOT NULL), `api_key_hash` (VARCHAR(64), NOT NULL), `name` (VARCHAR(100), NOT NULL), `is_active` (Boolean, NOT NULL, Default True), `created_at` (TIMESTAMPTZ, NOT NULL), `revoked_at` (TIMESTAMPTZ, Optional).
+  *(Note: Used strictly for machine-to-machine telemetry ingestion authentication. Uses prefix-based fast lookup and SHA-256 for secret verification. If service_id is NULL, it acts as a global collector key.)*
+
 ### Incidents and Telemetry
-- **`telemetry`**: `id` (UUID, PK), `service_id` (UUID, FK), `timestamp` (Timestamp), `ingestion_timestamp` (Timestamp), `telemetry_type` (String/Enum: log, metric, trace), `trace_id` (String, Optional 128-bit OTel ID), `span_id` (String, Optional 64-bit OTel ID), `parent_span_id` (String, Optional 64-bit OTel ID), `severity` (String, Optional), `resource_attributes` (JSONB), `event_attributes` (JSONB), `raw_payload` (JSONB).
+- **`telemetry`**: `id` (UUID, Part of PK), `timestamp` (TIMESTAMPTZ, Partition Key & Part of PK), `service_id` (UUID, NOT NULL), `ingestion_timestamp` (TIMESTAMPTZ, NOT NULL), `telemetry_type` (VARCHAR(20), NOT NULL), `trace_id` (VARCHAR(32), Optional OTel ID), `span_id` (VARCHAR(16), Optional OTel ID), `parent_span_id` (VARCHAR(16), Optional OTel ID), `severity_number` (INTEGER, Optional), `metric_name` (VARCHAR(255), Optional), `metric_value` (DOUBLE PRECISION, Optional), `unit` (VARCHAR(50), Optional), `fingerprint` (VARCHAR(64), NOT NULL), `resource_attributes` (JSONB), `event_attributes` (JSONB), `raw_payload` (JSONB, NOT NULL).
+  *(Constraints: `PRIMARY KEY (id, timestamp)`, `UNIQUE (fingerprint, timestamp)`. Note: Explicit Database Foreign Keys are NOT used from long-lived tables to `telemetry` due to partitions dropping after 7 days.)*
 - **`incidents`**: `id` (UUID, PK), `title` (String), `status` (String/Enum: open, investigating, resolved), `severity` (String/Enum: P1-P4), `service_id` (UUID, FK), `assigned_to` (UUID, Nullable FK), `created_at` (Timestamp), `resolved_at` (Nullable Timestamp).
 - **`incident_events`**: `id` (UUID, PK), `incident_id` (UUID, FK), `event_type` (String), `description` (Text), `timestamp` (Timestamp).
 - **`anomalies`**: `id` (UUID, PK), `service_id` (UUID, FK), `metric_name` (String), `score` (Float), `timestamp` (Timestamp), `incident_id` (UUID, Nullable FK).
