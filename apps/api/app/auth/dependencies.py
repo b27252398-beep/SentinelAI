@@ -44,7 +44,8 @@ def get_current_user(
         )
         
     try:
-        user_id_int = int(user_id)
+        from uuid import UUID
+        user_uuid = UUID(user_id)
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -52,7 +53,7 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
         
-    user = db.query(User).filter(User.id == user_id_int).first()
+    user = db.query(User).filter(User.id == user_uuid).first()
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

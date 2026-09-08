@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Boolean, Table, ForeignKey, DateTime
+import uuid
+from sqlalchemy import Column, String, Boolean, Table, ForeignKey, DateTime, Uuid
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -6,21 +7,21 @@ from app.db.base import Base
 user_roles = Table(
     "user_roles",
     Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
+    Column("user_id", Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("role_id", Uuid, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
 )
 
 role_permissions = Table(
     "role_permissions",
     Base.metadata,
-    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
-    Column("permission_id", Integer, ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True)
+    Column("role_id", Uuid, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+    Column("permission_id", Uuid, ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True)
 )
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
@@ -33,7 +34,7 @@ class User(Base):
 class Role(Base):
     __tablename__ = "roles"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String)
 
@@ -43,7 +44,7 @@ class Role(Base):
 class Permission(Base):
     __tablename__ = "permissions"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String)
 

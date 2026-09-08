@@ -12,8 +12,10 @@ class RoleSchema(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+from uuid import UUID
+
 class UserResponse(BaseModel):
-    id: int
+    id: UUID
     username: str
     email: EmailStr
     is_active: bool
