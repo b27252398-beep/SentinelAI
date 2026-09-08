@@ -33,3 +33,6 @@ setup_exception_handlers(app)
 # Include routers
 app.include_router(health.router, tags=["Health"])
 app.include_router(auth_router.router)
+
+from app.services import router as services_router
+app.include_router(services_router.router, prefix="/api/v1")
