@@ -22,6 +22,7 @@
 | All Read APIs | GET | Yes | Yes | Yes | Yes |
 
 ## Enforcement
-- **Backend Authorization**: FastAPI dependency injection `Depends(require_role('Manager'))` enforces RBAC at the route level. Returning `401 Unauthorized` if no token is present, and `403 Forbidden` if the user has insufficient privileges.
+- **Backend Authorization**: FastAPI dependency injection `Depends(require_role(['Administrator']))` or `Depends(require_permission('users:read'))` enforces RBAC at the route level. Returning `401 Unauthorized` if no token is present, and `403 Forbidden` if the user has insufficient privileges.
+- **Password Security**: Passwords are hashed using the **Argon2id** algorithm via `pwdlib`. Secrets are not logged and are strictly configured via environment variables.
 - **Frontend Authorization**: Conditionally renders UI elements based on the decoded JWT roles to prevent unauthorized actions from being visible (e.g., hiding the "Approve" button for non-managers).
 - **Audit**: All actions by authenticated users (modifying incidents, triggering investigations, approvals) are intercepted and written to the `audit_logs` table.

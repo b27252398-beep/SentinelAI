@@ -98,7 +98,19 @@ The API will be available at `http://127.0.0.1:8000`.
 - **GET `/health`**: Returns basic status `{"status": "ok"}` indicating the application is running.
 - **GET `/ready`**: Connects to PostgreSQL and Redis. Returns `200 OK` if both are accessible, or `503 Service Unavailable` if either dependency is offline.
 
-### 6. Running Tests
+### 6. RBAC Seeding
+To initialize the database with the core Application Roles and Permissions, run the seeding script:
+```bash
+python app/seed_db.py
+```
+To create an initial Administrator account during seeding, provide the following environment variables in your `.env` file before running the script:
+```env
+INITIAL_ADMIN_USERNAME=admin
+INITIAL_ADMIN_PASSWORD=your_secure_local_password
+INITIAL_ADMIN_EMAIL=admin@sentinelai.local
+```
+
+### 7. Running Tests
 To execute the backend test suite:
 ```bash
 pytest -v

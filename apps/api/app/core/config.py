@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: str = "6379"
 
+    # JWT Authentication
+    JWT_SECRET_KEY: str = "unsafe-development-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
 

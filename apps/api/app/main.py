@@ -5,6 +5,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.exceptions import setup_exception_handlers
 from app.api import health
+from app.auth import router as auth_router
 
 # Configure structured logging
 setup_logging()
@@ -31,3 +32,4 @@ setup_exception_handlers(app)
 
 # Include routers
 app.include_router(health.router, tags=["Health"])
+app.include_router(auth_router.router)
