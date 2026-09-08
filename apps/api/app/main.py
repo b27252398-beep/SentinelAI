@@ -20,6 +20,20 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request
+from starlette.responses import JSONResponse
+
+class MaxPayloadSizeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.endswith("/telemetry/ingest") and request.method == "POST":
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > 5 * 1024 * 1024:
+                return JSONResponse(status_code=413, content={"detail": "Payload Too Large (Exceeds 5 MiB)"})
+            # To handle missing content-length, we rely on the ASGI server (like uvicorn)
+            # or streaming constraints, but MVP enforces the header explicitly.
+        return await call_next(request)
+
 # Setup CORS
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +42,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MaxPayloadSizeMiddleware)
 
 # Exception handlers
 setup_exception_handlers(app)

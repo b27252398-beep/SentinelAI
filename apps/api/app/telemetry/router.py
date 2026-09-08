@@ -3,7 +3,7 @@ import json
 import uuid
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import select, exc
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -21,6 +21,15 @@ from app.services.models import Service
 from app.auth.dependencies import get_current_user, require_role
 
 router = APIRouter()
+
+async def enforce_payload_size(request: Request):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        if int(content_length) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payload Too Large (Exceeds 5 MiB)")
+    body = await request.body()
+    if len(body) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Payload Too Large (Exceeds 5 MiB)")
 
 def compute_fingerprint(event, raw_payload_json: str) -> str:
     payload_hash = hashlib.sha256(raw_payload_json.encode()).hexdigest()

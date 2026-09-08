@@ -180,3 +180,21 @@ def test_human_query_endpoints(client, db_session):
     resp_detail = client.get(f"/api/v1/telemetry/{t_id}", headers={"Authorization": f"Bearer {viewer_token}"})
     assert resp_detail.status_code == 200
     assert resp_detail.json()["id"] == t_id
+
+def test_oversized_request_rejection(client, db_session):
+    svc = setup_service(db_session)
+    cred = setup_credential(db_session, svc.id)
+    
+    # Send a request with a Content-Length exactly 5MB + 1 byte
+    oversize = 5 * 1024 * 1024 + 1
+    resp = client.post(
+        "/api/v1/telemetry/ingest",
+        headers={
+            "Authorization": f"Bearer {cred}",
+            "Content-Type": "application/json",
+            "Content-Length": str(oversize)
+        },
+        content=b" " * oversize
+    )
+    assert resp.status_code == 413
+
