@@ -10,6 +10,7 @@ from app.services import router as services_router
 from app.telemetry import router as telemetry_router
 from app.detection import router as detection_router
 from app.incidents import router as incidents_router
+from app.investigations import router as investigations_router
 
 # Configure structured logging
 setup_logging()
@@ -32,8 +33,6 @@ class MaxPayloadSizeMiddleware(BaseHTTPMiddleware):
             content_length = request.headers.get("content-length")
             if content_length and int(content_length) > 5 * 1024 * 1024:
                 return JSONResponse(status_code=413, content={"detail": "Payload Too Large (Exceeds 5 MiB)"})
-            # To handle missing content-length, we rely on the ASGI server (like uvicorn)
-            # or streaming constraints, but MVP enforces the header explicitly.
         return await call_next(request)
 
 # Setup CORS
@@ -56,3 +55,4 @@ app.include_router(services_router.router, prefix="/api/v1")
 app.include_router(telemetry_router.router, prefix="/api/v1/telemetry", tags=["Telemetry"])
 app.include_router(detection_router.router, prefix="/api/v1", tags=["Detection"])
 app.include_router(incidents_router.router, prefix="/api/v1", tags=["Incidents"])
+app.include_router(investigations_router.router, prefix="/api/v1", tags=["Investigations"])
