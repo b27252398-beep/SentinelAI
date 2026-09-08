@@ -4,13 +4,13 @@
 erDiagram
     USERS ||--o{ USER_ROLES : has
     ROLES ||--o{ USER_ROLES : belongs_to
-    USERS ||--o{ SERVICES : owns
     USERS ||--o{ INCIDENTS : assigned_to
     USERS ||--o{ RECOMMENDATION_DECISIONS : decides
     USERS ||--o{ AUDIT_LOGS : performs
     
     SERVICES ||--o{ INCIDENTS : experiences
     SERVICES ||--o{ ANOMALIES : triggers
+    SERVICES ||--o{ TELEMETRY : generates
     
     INCIDENTS ||--o{ INCIDENT_EVENTS : contains
     INCIDENTS ||--o{ ANOMALIES : groups
@@ -30,7 +30,16 @@ erDiagram
     SERVICES {
         uuid id PK
         string name
-        uuid owner_id FK
+        string owner_team
+    }
+    TELEMETRY {
+        uuid id PK
+        uuid service_id FK
+        timestamp timestamp
+        string telemetry_type
+        string trace_id
+        string span_id
+        jsonb raw_payload
     }
     INCIDENTS {
         uuid id PK

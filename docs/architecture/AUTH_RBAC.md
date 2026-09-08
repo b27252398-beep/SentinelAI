@@ -11,6 +11,8 @@
 3. **Engineer**: Can view incidents, inspect telemetry, trigger AI investigations, but CANNOT approve recommendations.
 4. **Viewer**: Read-only access to dashboards and incidents.
 
+*Note on Machine Ingestion*: SentinelAI does not utilize a fifth "System Agent" human role. Instead, external observability systems emitting telemetry authenticate via a separate machine-to-machine service credential mechanism (e.g., dedicated API Key or Service JWT). This credential holds a narrowly scoped `telemetry:ingest` permission and cannot bypass general system authorization.
+
 | Resource | Action | Admin | Manager | Engineer | Viewer |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | Users/Roles | Create/Update | Yes | No | No | No |

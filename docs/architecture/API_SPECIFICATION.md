@@ -15,7 +15,7 @@ The SentinelAI API follows RESTful conventions and uses JSON. All endpoints requ
 - **`POST /api/v1/services`** [Admin, Manager]: Registers a service.
 
 ## Telemetry
-- **`POST /api/v1/telemetry/ingest`** [System]: Accepts OTLP-like JSON payload for logs, metrics, or traces.
+- **`POST /api/v1/telemetry/ingest`** [Machine Credential]: Accepts OTLP-like JSON payload for logs, metrics, or traces. Requires a dedicated service account credential with `telemetry:ingest` permission, not a human user token.
 
 ## Incidents
 - **`GET /api/v1/incidents`** [Viewer+]: Lists incidents (filterable by status/severity).
