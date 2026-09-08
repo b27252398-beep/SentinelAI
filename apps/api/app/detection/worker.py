@@ -41,7 +41,15 @@ def process_config(db: Session, config: DetectorConfig, window_start: datetime, 
             return
             
         if observed_val is None:
-            observed_val = 0.0
+            # No aggregate value available — missing observation, not observed zero.
+            # Do not coerce to 0.0; surface as UNDETERMINED so lifecycle is not mutated.
+            result = DetectionResult(is_anomaly=False, severity=None, evidence={
+                "status": "UNDETERMINED",
+                "reason": "null_aggregate",
+                "raw_sample_count": raw_count
+            })
+            process_detection_result(db, config, window_start, window_end, result)
+            return
 
         if "warning_threshold" in config.config or "critical_threshold" in config.config:
             # Static threshold

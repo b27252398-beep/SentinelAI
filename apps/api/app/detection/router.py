@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from typing import List
+from sqlalchemy.exc import IntegrityError
+from typing import List, Optional
 from uuid import UUID
 
 from app.db.session import get_db
@@ -13,18 +14,39 @@ from app.detection.schemas import DetectorConfigCreate, DetectorConfigResponse, 
 
 router = APIRouter()
 
-@router.post("/configs", response_model=DetectorConfigResponse, status_code=status.HTTP_201_CREATED)
+# Authorized detector types — deferred types must be explicitly rejected.
+AUTHORIZED_DETECTOR_TYPES = {"DB Connection Exhaustion", "Memory Leak", "API Latency"}
+
+
+# ---------------------------------------------------------------------------
+# Detector Configuration Endpoints  →  /api/v1/detectors
+# ---------------------------------------------------------------------------
+
+@router.post("/detectors", response_model=DetectorConfigResponse, status_code=status.HTTP_201_CREATED)
 def create_detector_config(
     config_in: DetectorConfigCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["Administrator", "Engineer"]))
 ):
-    # Verify service exists
-    service = db.execute(select(Service).where(Service.id == config_in.service_id)).scalar_one_or_none()
+    """Create a new detector configuration (version 1). Administrator and Engineer only."""
+    # Reject deferred and unknown detector types.
+    if config_in.detector_type not in AUTHORIZED_DETECTOR_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Unsupported detector_type '{config_in.detector_type}'. "
+                f"Authorized types: {sorted(AUTHORIZED_DETECTOR_TYPES)}"
+            )
+        )
+
+    # Verify service exists.
+    service = db.execute(
+        select(Service).where(Service.id == config_in.service_id)
+    ).scalar_one_or_none()
     if not service:
-        raise HTTPException(status_code=404, detail="Service not found")
-        
-    # Check if active config already exists for this combination
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+
+    # Reject if an active config already exists for this logical identity.
     existing = db.execute(
         select(DetectorConfig).where(
             DetectorConfig.service_id == config_in.service_id,
@@ -33,10 +55,12 @@ def create_detector_config(
             DetectorConfig.enabled == True
         )
     ).scalar_one_or_none()
-    
     if existing:
-        raise HTTPException(status_code=400, detail="Active detector already exists for this feature. Use update instead.")
-        
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An active detector already exists for this (service, type, feature). Use the update endpoint."
+        )
+
     new_config = DetectorConfig(
         service_id=config_in.service_id,
         detector_type=config_in.detector_type,
@@ -49,34 +73,60 @@ def create_detector_config(
         enabled=True,
         version=1
     )
-    db.add(new_config)
-    db.commit()
-    db.refresh(new_config)
+    try:
+        db.add(new_config)
+        db.commit()
+        db.refresh(new_config)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A detector configuration with this identity already exists (concurrent creation)."
+        )
     return new_config
 
-@router.put("/configs/{config_id}", response_model=DetectorConfigResponse)
+
+@router.put("/detectors/{detector_id}", response_model=DetectorConfigResponse)
 def update_detector_config(
-    config_id: UUID,
+    detector_id: UUID,
     config_in: DetectorConfigCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["Administrator", "Engineer"]))
 ):
-    old_config = db.execute(select(DetectorConfig).where(DetectorConfig.id == config_id)).scalar_one_or_none()
+    """
+    Update a detector configuration by creating an immutable new version.
+    The old version is disabled. Administrator and Engineer only.
+    """
+    if config_in.detector_type not in AUTHORIZED_DETECTOR_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Unsupported detector_type '{config_in.detector_type}'. "
+                f"Authorized types: {sorted(AUTHORIZED_DETECTOR_TYPES)}"
+            )
+        )
+
+    old_config = db.execute(
+        select(DetectorConfig).where(DetectorConfig.id == detector_id)
+    ).scalar_one_or_none()
     if not old_config:
-        raise HTTPException(status_code=404, detail="Config not found")
-        
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detector configuration not found")
+
     if not old_config.enabled:
-        raise HTTPException(status_code=400, detail="Cannot update a disabled config")
-        
-    if (old_config.service_id != config_in.service_id or 
-        old_config.detector_type != config_in.detector_type or 
-        old_config.feature != config_in.feature):
-        raise HTTPException(status_code=400, detail="Cannot change logical identity (service, type, feature) during update")
-        
-    # Disable old config
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot update a disabled (superseded) configuration."
+        )
+
+    if (old_config.service_id != config_in.service_id
+            or old_config.detector_type != config_in.detector_type
+            or old_config.feature != config_in.feature):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot change the logical identity (service_id, detector_type, feature) during an update."
+        )
+
     old_config.enabled = False
-    
-    # Create new config with incremented version
     new_config = DetectorConfig(
         service_id=old_config.service_id,
         detector_type=old_config.detector_type,
@@ -89,54 +139,74 @@ def update_detector_config(
         enabled=True,
         version=old_config.version + 1
     )
-    db.add(old_config)
-    db.add(new_config)
-    db.commit()
-    db.refresh(new_config)
+    try:
+        db.add(old_config)
+        db.add(new_config)
+        db.commit()
+        db.refresh(new_config)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Version conflict: a concurrent update already created this version. Please retry."
+        )
     return new_config
 
-@router.get("/configs", response_model=List[DetectorConfigResponse])
-def get_detector_configs(
-    service_id: UUID = None,
-    enabled: bool = None,
+
+@router.get("/detectors", response_model=List[DetectorConfigResponse])
+def list_detector_configs(
+    service_id: Optional[UUID] = None,
+    enabled: Optional[bool] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """List detector configurations. All authenticated human users."""
     query = select(DetectorConfig)
-    if service_id:
+    if service_id is not None:
         query = query.where(DetectorConfig.service_id == service_id)
     if enabled is not None:
         query = query.where(DetectorConfig.enabled == enabled)
-        
-    configs = db.execute(query).scalars().all()
+    configs = db.execute(query.order_by(DetectorConfig.created_at.desc())).scalars().all()
     return configs
 
-@router.get("/configs/{config_id}", response_model=DetectorConfigResponse)
+
+@router.get("/detectors/{detector_id}", response_model=DetectorConfigResponse)
 def get_detector_config(
-    config_id: UUID,
+    detector_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    config = db.execute(select(DetectorConfig).where(DetectorConfig.id == config_id)).scalar_one_or_none()
+    """Get a single detector configuration by ID. All authenticated human users."""
+    config = db.execute(
+        select(DetectorConfig).where(DetectorConfig.id == detector_id)
+    ).scalar_one_or_none()
     if not config:
-        raise HTTPException(status_code=404, detail="Config not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Detector configuration not found")
     return config
 
+
+# ---------------------------------------------------------------------------
+# Anomaly Event Endpoints  →  /api/v1/anomalies
+# ---------------------------------------------------------------------------
+
 @router.get("/anomalies", response_model=List[AnomalyEventResponse])
-def get_anomalies(
-    service_id: UUID = None,
-    status: str = None,
+def list_anomalies(
+    service_id: Optional[UUID] = None,
+    status: Optional[str] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """List anomaly events. All authenticated human users."""
     query = select(AnomalyEvent)
-    if service_id:
+    if service_id is not None:
         query = query.where(AnomalyEvent.service_id == service_id)
-    if status:
+    if status is not None:
         query = query.where(AnomalyEvent.status == status)
-        
-    anomalies = db.execute(query.order_by(AnomalyEvent.created_at.desc())).scalars().all()
+    anomalies = db.execute(
+        query.order_by(AnomalyEvent.window_start.desc())
+    ).scalars().all()
     return anomalies
+
 
 @router.get("/anomalies/{anomaly_id}", response_model=AnomalyEventResponse)
 def get_anomaly(
@@ -144,7 +214,10 @@ def get_anomaly(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    anomaly = db.execute(select(AnomalyEvent).where(AnomalyEvent.id == anomaly_id)).scalar_one_or_none()
+    """Get a single anomaly event by ID. All authenticated human users."""
+    anomaly = db.execute(
+        select(AnomalyEvent).where(AnomalyEvent.id == anomaly_id)
+    ).scalar_one_or_none()
     if not anomaly:
-        raise HTTPException(status_code=404, detail="Anomaly not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Anomaly event not found")
     return anomaly

@@ -107,8 +107,9 @@ def get_baseline_stats(db: Session, service_id: uuid.UUID, detector_type: str, b
         if not res or res.observation_count == 0:
             return 0.0, 0.0, 0
             
-        # Mock 12 observations for testing if we found rows
-        return (res.baseline_mean or 0.0), 0.5, (12 if res.observation_count > 0 else 0)
+        # Return actual count — do not fabricate. Tests requiring a 12-window
+        # baseline must insert sufficient data rows or be run against PostgreSQL.
+        return (res.baseline_mean or 0.0), 0.5, int(res.observation_count or 0)
 
     # PostgreSQL native queries
     if detector_type == "DB Connection Exhaustion" or detector_type == "Memory Leak":

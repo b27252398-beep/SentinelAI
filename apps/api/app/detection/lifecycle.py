@@ -40,13 +40,6 @@ def process_detection_result(
         if open_window_end.tzinfo is None:
             open_window_end = open_window_end.replace(tzinfo=timezone.utc)
             
-        # Idempotency check: if this exact window or a later one was already processed
-        if current_window_end <= open_window_end and open_anomaly.cooldown_count == 0:
-            # If we're retrying a breach that already extended the window, we do nothing.
-            # Wait, what if it was a clean window retry? Then cooldown_count > 0.
-            # Since Redis locks protect concurrency, simple check is fine.
-            pass
-
         if result.is_anomaly:
             # Consecutive breach or new breach during cooldown
             # Extend window_end
@@ -54,10 +47,11 @@ def process_detection_result(
                 open_anomaly.window_end = current_window_end
                 
             if result.severity == "P2":
-                # Check how many P2s we've had. We can store this in evidence.
+                # Check how many consecutive P2 breaches we have accumulated.
                 consecutive_p2s = open_anomaly.evidence.get("consecutive_p2s", 0)
                 if open_anomaly.cooldown_count > 0:
-                    consecutive_p2s = 0 # reset if we had a cooldown
+                    # A clean window interrupted the streak — reset before incrementing.
+                    consecutive_p2s = 0
                 
                 # We only increment if this is a NEW window we are processing.
                 # If we're retrying the SAME window, we shouldn't double-count.
@@ -118,7 +112,14 @@ def process_detection_result(
             ).scalar_one_or_none()
             
             if not existing:
-                # Create NEW anomaly
+                # Create NEW anomaly lifecycle. If it opens as P2, count as streak=1.
+                initial_evidence = dict(result.evidence)
+                if result.severity == "P2":
+                    initial_evidence["consecutive_p2s"] = 1
+                else:
+                    initial_evidence["consecutive_p2s"] = 0
+                initial_evidence["last_evaluated_window"] = current_window_start.isoformat()
+
                 new_anomaly = AnomalyEvent(
                     service_id=config.service_id,
                     detector_config_id=config.id,
@@ -130,7 +131,7 @@ def process_detection_result(
                     severity=result.severity,
                     status="OPEN",
                     cooldown_count=0,
-                    evidence=result.evidence
+                    evidence=initial_evidence
                 )
                 db.add(new_anomaly)
                 db.commit()
