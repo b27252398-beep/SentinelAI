@@ -11,6 +11,7 @@ from app.detection.engine import (
     evaluate_z_score_detector,
     evaluate_static_threshold
 )
+from app.detection.schemas import DetectionResult
 from app.detection.repository import (
     get_db_connections_avg,
     get_memory_usage_avg,
