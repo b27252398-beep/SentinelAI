@@ -7,7 +7,7 @@ from app.db.session import get_db
 from app.auth.dependencies import get_current_user, require_role
 from app.auth.models import User
 from app.incidents.models import Incident
-from app.investigations.models import Investigation, InvestigationEvidence, Hypothesis, Recommendation
+from app.investigations.models import Investigation, InvestigationEvidence, Hypothesis
 from app.investigations.schemas import InvestigationResponse, InvestigationEvidenceResponse, HypothesisResponse, RCAActionRequest
 from app.investigations.worker import process_investigation
 from app.audit.logger import log_event

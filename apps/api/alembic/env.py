@@ -20,6 +20,9 @@ import app.auth.models  # Required for Alembic to discover models in Base.metada
 import app.services.models
 import app.telemetry.models
 import app.detection.models
+import app.incidents.models
+import app.investigations.models
+import app.recommendations.models
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

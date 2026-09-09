@@ -1,7 +1,7 @@
 from typing import List
 import json
 from sqlalchemy.orm import Session
-from app.investigations.models import Investigation, Hypothesis, Recommendation
+from app.investigations.models import Investigation, Hypothesis
 from app.investigations.normalizer import normalize_evidence
 from app.investigations.llm import get_llm_provider, LLMHypothesis
 
@@ -79,18 +79,4 @@ async def evaluate_and_persist_hypotheses(
         
     db.commit()
     
-    # Optionally generate a stub recommendation for the RC (as required by architecture, 
-    # the subsystem drafts recommendations for the probable root cause).
-    for db_h in db_hypotheses:
-        if db_h.is_probable_root_cause:
-            # Draft recommendation
-            rec = Recommendation(
-                investigation_id=investigation.id,
-                hypothesis_id=db_h.id,
-                action_description="Review logs and address the identified root cause.",
-                risk_level="Low",
-                status="pending"
-            )
-            db.add(rec)
-            db.commit()
-            break
+

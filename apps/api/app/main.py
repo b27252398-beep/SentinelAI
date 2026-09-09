@@ -11,6 +11,7 @@ from app.telemetry import router as telemetry_router
 from app.detection import router as detection_router
 from app.incidents import router as incidents_router
 from app.investigations import router as investigations_router
+from app.recommendations import router as recommendations_router
 
 # Configure structured logging
 setup_logging()
@@ -56,3 +57,4 @@ app.include_router(telemetry_router.router, prefix="/api/v1/telemetry", tags=["T
 app.include_router(detection_router.router, prefix="/api/v1", tags=["Detection"])
 app.include_router(incidents_router.router, prefix="/api/v1", tags=["Incidents"])
 app.include_router(investigations_router.router, prefix="/api/v1", tags=["Investigations"])
+app.include_router(recommendations_router.router, prefix="/api/v1", tags=["Recommendations"])

@@ -1,5 +1,6 @@
 import json
 import asyncio
+import uuid
 from typing import List, Dict, Any, Optional
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, ValidationError
@@ -14,11 +15,30 @@ class LLMHypothesis(BaseModel):
 class LLMResponse(BaseModel):
     hypotheses: List[LLMHypothesis]
 
+class LLMRecommendation(BaseModel):
+    title: str
+    description: str
+    rationale: str
+    recommendation_type: str
+    expected_effect: str
+    risk_level: str
+    confidence: float
+    preconditions: List[str]
+    validation_steps: List[str]
+    rollback_guidance: str
+
+class LLMRecommendationResponse(BaseModel):
+    recommendation: LLMRecommendation
+
 class LLMProvider(ABC):
     @abstractmethod
     async def generate_hypotheses(self, prompt: str, evidence: str) -> LLMResponse:
         pass
     
+    @abstractmethod
+    async def generate_recommendations(self, prompt: str, rca_statement: str, evidence: str) -> LLMRecommendationResponse:
+        pass
+
     @property
     @abstractmethod
     def model_identifier(self) -> str:
@@ -48,15 +68,8 @@ class DevMockLLMProvider(LLMProvider):
             raise RuntimeError("LLM Service Unavailable")
             
         if self.malformed:
-            # We bypass the standard return and simulate a raw JSON parse error in the caller,
-            # or just raise ValidationError by feeding it bad data if we structured it that way.
-            # But the caller expects LLMResponse. 
-            # We'll simulate a failure that the caller's try/except for malformed JSON would catch.
             raise ValueError("Malformed JSON returned by LLM")
 
-        # Extract evidence IDs to pretend we reasoned about them
-        # In a real mock we might regex them out, but for tests we can just return dummy
-        
         h1 = LLMHypothesis(
             statement="Database connection pool was exhausted due to high load.",
             reasoning="Observed latency spike and db_connections metric maxed out.",
@@ -72,6 +85,32 @@ class DevMockLLMProvider(LLMProvider):
             contradicting_evidence_ids=["dummy-id-1"]
         )
         return LLMResponse(hypotheses=[h1, h2])
+
+    async def generate_recommendations(self, prompt: str, rca_statement: str, evidence: str) -> LLMRecommendationResponse:
+        if self.timeout:
+            await asyncio.sleep(65)
+            raise TimeoutError("LLM Request Timed Out")
+        
+        if self.should_fail:
+            raise RuntimeError("LLM Service Unavailable")
+            
+        if self.malformed:
+            raise ValueError("Malformed JSON returned by LLM")
+            
+        return LLMRecommendationResponse(
+            recommendation=LLMRecommendation(
+                title="Scale up DB connection pool",
+                description="Increase max_connections in Postgres config.",
+                rationale=f"Addresses RCA: {rca_statement}",
+                recommendation_type="CONFIGURATION_CHANGE",
+                expected_effect="Errors will drop, latency will stabilize.",
+                risk_level="MEDIUM",
+                confidence=0.85,
+                preconditions=["DB is currently in healthy CPU state"],
+                validation_steps=["Monitor db_connections metric", "Check error rates"],
+                rollback_guidance="Revert max_connections to previous value."
+            )
+        )
 
 
 # A factory or dependency injection can provide the real one in prod.

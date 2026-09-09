@@ -106,32 +106,4 @@ class Hypothesis(Base):
     )
 
 
-class Recommendation(Base):
-    __tablename__ = "recommendations"
 
-    id = Column(Uuid, primary_key=True, default=uuid.uuid4, index=True)
-    investigation_id = Column(
-        Uuid, ForeignKey("investigations.id", ondelete="CASCADE"),
-        nullable=False, index=True
-    )
-    hypothesis_id = Column(
-        Uuid, ForeignKey("hypotheses.id", ondelete="CASCADE"),
-        nullable=False, index=True
-    )
-    action_description = Column(Text, nullable=False)
-    risk_level = Column(String(20), nullable=False) # Low, Medium, High
-    status = Column(String(20), nullable=False, default="pending") # pending, approved, rejected
-    reviewed_by = Column(
-        Uuid, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
-    rationale = Column(Text, nullable=True)
-
-    created_at = Column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False
-    )
